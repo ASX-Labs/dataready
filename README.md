@@ -10,7 +10,7 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Open the URL shown in the terminal (usually http://localhost:8501).
+Open the URL shown in the terminal (https://dataready-jntbkbxpzsudwabniq4imq.streamlit.app/).
 
 ## Features
 
