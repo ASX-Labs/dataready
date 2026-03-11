@@ -1,6 +1,6 @@
 # DataReady
 
-Professional data analysis web app by **ASX Labs** — *Better Choices Start Here*.
+Professional data analysis web app by **ASX Labs** — *Clean Data. Better Models.*.
 
 ## Quick start
 
