@@ -1,5 +1,8 @@
 # DataReady
 
+## 🚀 Live Demo
+👉 https://dataready-jntbkbxpzsudwabniq4imq.streamlit.app
+
 Professional data analysis web app by **ASX Labs** — *Clean Data. Better Models.*.
 
 ## Quick start
