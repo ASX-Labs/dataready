@@ -1,6 +1,6 @@
 """
 DataReady - Professional Data Analysis Web App
-A product of ASX Labs | Better Choices Start Here
+A product of ASX Labs | Clean Data. Better Models.
 """
 
 import streamlit as st
@@ -10,7 +10,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from io import StringIO
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score, r2_score
 from typing import Optional, Tuple
 
 # Page config - must be first Streamlit command
@@ -289,10 +291,15 @@ def detect_outliers_iqr(series: pd.Series) -> np.ndarray:
     return (series < lower) | (series > upper)
 
 
-def feature_importance_rf(df: pd.DataFrame, target_col: str) -> Optional[pd.Series]:
+def feature_importance_rf(
+    df: pd.DataFrame, target_col: str
+) -> Tuple[Optional[pd.Series], Optional[float], Optional[str]]:
     """
     Compute feature importance using Random Forest.
-    Returns series of (feature_name -> importance) or None if not possible.
+    Returns:
+    - feature importance series
+    - model performance score on holdout set
+    - metric name ("Accuracy" or "R²")
     """
     num_cols = get_numerical_columns(df)
     if target_col in num_cols:
@@ -301,7 +308,7 @@ def feature_importance_rf(df: pd.DataFrame, target_col: str) -> Optional[pd.Seri
         num_cols = [c for c in num_cols if c != target_col]
 
     if not num_cols:
-        return None
+        return None, None, None
 
     X = df[num_cols].copy()
     for c in X.columns:
@@ -309,26 +316,41 @@ def feature_importance_rf(df: pd.DataFrame, target_col: str) -> Optional[pd.Seri
     X = X.fillna(X.median())
 
     y = df[target_col]
+    metric_name = None
     if y.dtype == "object" or y.dtype.name == "category":
         le = LabelEncoder()
         y = le.fit_transform(y.astype(str))
         n_classes = len(le.classes_)
         if n_classes < 2:
-            return None
+            return None, None, None
+        # Stratify for classification when possible.
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42, stratify=y
+        )
         model = RandomForestClassifier(n_estimators=100, random_state=42, max_depth=10)
+        metric_name = "Accuracy"
     else:
         y = pd.to_numeric(y, errors="coerce")
-        y = y.dropna()
-        if len(y) < 10:
-            return None
         valid_idx = y.notna()
         X = X.loc[valid_idx]
         y = y[valid_idx]
+        if len(y) < 10:
+            return None, None, None
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42
+        )
         model = RandomForestRegressor(n_estimators=100, random_state=42, max_depth=10)
+        metric_name = "R²"
 
-    model.fit(X, y)
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    performance = (
+        accuracy_score(y_test, y_pred)
+        if metric_name == "Accuracy"
+        else r2_score(y_test, y_pred)
+    )
     imp = pd.Series(model.feature_importances_, index=num_cols).sort_values(ascending=True)
-    return imp
+    return imp, float(performance), metric_name
 
 
 def generate_recommendations(df: pd.DataFrame, quality_score: int,
@@ -363,6 +385,160 @@ def generate_recommendations(df: pd.DataFrame, quality_score: int,
     return recs
 
 
+def build_data_type_profile(df: pd.DataFrame) -> pd.DataFrame:
+    """Build a simple profile of each column and potential issues."""
+    rows = []
+    for col in df.columns:
+        s = df[col]
+        missing_pct = float(s.isna().mean() * 100)
+        unique_vals = int(s.nunique(dropna=True))
+        dtype = str(s.dtype)
+        inferred = "categorical/text"
+
+        if np.issubdtype(s.dtype, np.number):
+            inferred = "numeric"
+        elif np.issubdtype(s.dtype, np.datetime64):
+            inferred = "datetime"
+        elif dtype == "object":
+            non_null = s.dropna().astype(str)
+            as_num = pd.to_numeric(non_null.str.replace(",", ""), errors="coerce")
+            num_ratio = as_num.notna().mean() if len(non_null) else 0
+            if num_ratio >= 0.9:
+                inferred = "numeric (stored as text)"
+            else:
+                as_dt = pd.to_datetime(non_null, errors="coerce")
+                dt_ratio = as_dt.notna().mean() if len(non_null) else 0
+                if dt_ratio >= 0.9:
+                    inferred = "datetime (stored as text)"
+
+        flag = ""
+        if "id" in col.lower() and unique_vals >= max(1, int(len(df) * 0.8)):
+            flag = "possible ID"
+        elif unique_vals <= 1:
+            flag = "constant/near-constant"
+        elif missing_pct > 30:
+            flag = "high missingness"
+
+        rows.append(
+            {
+                "Column": col,
+                "Pandas dtype": dtype,
+                "Inferred type": inferred,
+                "Missing %": round(missing_pct, 1),
+                "Unique values": unique_vals,
+                "Flag": flag,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def apply_cleaning_actions(
+    df: pd.DataFrame,
+    remove_duplicates: bool,
+    impute_missing: bool,
+    cap_outliers: bool,
+    drop_constant: bool,
+) -> pd.DataFrame:
+    """Apply selected cleaning actions and return a cleaned copy."""
+    cleaned = df.copy()
+
+    if remove_duplicates:
+        cleaned = cleaned.drop_duplicates()
+
+    if drop_constant:
+        nunique = cleaned.nunique(dropna=False)
+        constant_cols = nunique[nunique <= 1].index.tolist()
+        if constant_cols:
+            cleaned = cleaned.drop(columns=constant_cols)
+
+    if impute_missing:
+        for col in cleaned.columns:
+            if cleaned[col].isna().sum() == 0:
+                continue
+            if np.issubdtype(cleaned[col].dtype, np.number):
+                cleaned[col] = cleaned[col].fillna(cleaned[col].median())
+            else:
+                mode_values = cleaned[col].mode(dropna=True)
+                fill_value = mode_values.iloc[0] if not mode_values.empty else np.nan
+                cleaned[col] = cleaned[col].fillna(fill_value)
+
+    if cap_outliers:
+        for col in cleaned.select_dtypes(include=[np.number]).columns:
+            Q1 = cleaned[col].quantile(0.25)
+            Q3 = cleaned[col].quantile(0.75)
+            IQR = Q3 - Q1
+            if IQR == 0:
+                continue
+            lower = Q1 - 1.5 * IQR
+            upper = Q3 + 1.5 * IQR
+            cleaned[col] = cleaned[col].clip(lower=lower, upper=upper)
+
+    return cleaned
+
+
+@st.cache_data(show_spinner=False)
+def compute_outlier_counts_cached(df: pd.DataFrame) -> dict:
+    """Compute outlier counts per numeric column using IQR; cached for speed."""
+    counts = {}
+    num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    for col in num_cols:
+        mask = detect_outliers_iqr(df[col].dropna())
+        counts[col] = int(mask.sum())
+    return counts
+
+
+def build_report_text(
+    original_df: pd.DataFrame,
+    cleaned_df: pd.DataFrame,
+    quality_score: int,
+    recommendations: list,
+    strong_pairs: list,
+) -> str:
+    """Generate a plain text analysis report."""
+    dup_count = int(original_df.duplicated().sum())
+    missing_pct = (cleaned_df.isna().sum() / max(1, len(cleaned_df)) * 100).sort_values(ascending=False)
+    top_missing = missing_pct[missing_pct > 0].head(3)
+
+    lines = [
+        "DataReady Analysis Report",
+        "ASX Labs | Clean Data. Better Models.",
+        "",
+        "Dataset Overview",
+        f"- Original rows: {len(original_df):,}",
+        f"- Original columns: {original_df.shape[1]:,}",
+        f"- Cleaned rows: {len(cleaned_df):,}",
+        f"- Cleaned columns: {cleaned_df.shape[1]:,}",
+        f"- Data quality score: {quality_score}/100",
+        f"- Duplicate rows (original): {dup_count}",
+        "",
+        "Top Issues",
+    ]
+
+    if len(top_missing) > 0:
+        for col, pct in top_missing.items():
+            lines.append(f"- {pct:.1f}% missing in '{col}'")
+    else:
+        lines.append("- No remaining missing values in cleaned data")
+
+    lines.extend([
+        "",
+        "Strong Correlation Pairs (|r| >= 0.6)",
+    ])
+
+    if strong_pairs:
+        for a, b, r in strong_pairs[:15]:
+            lines.append(f"- {a} <-> {b}: {r:.2f}")
+    else:
+        lines.append("- None detected")
+
+    lines.append("")
+    lines.append("Recommendations")
+    for rec in recommendations:
+        lines.append(f"- {rec.replace('**', '')}")
+
+    return "\n".join(lines)
+
+
 def main():
     inject_dark_theme_matplotlib()
     render_header()
@@ -378,6 +554,10 @@ def main():
 
     if uploaded_file is None:
         st.info("Upload a CSV file to get started. We'll show you data quality, outliers, correlations, and recommendations.")
+        return
+
+    if uploaded_file.size > 10 * 1024 * 1024:
+        st.error("File too large (max 10MB). Please upload a smaller CSV.")
         return
 
     with st.spinner("Loading your data..."):
@@ -400,9 +580,56 @@ def main():
 
     st.markdown("---")
 
+    with st.expander("**2. Data Type Profiler**", expanded=False):
+        profile_df = build_data_type_profile(df)
+        st.dataframe(profile_df, use_container_width=True, hide_index=True)
+        flagged = profile_df[profile_df["Flag"] != ""]
+        if not flagged.empty:
+            st.caption("Flagged columns may need cleanup before modeling.")
+
+    with st.expander("**3. Data Cleaning Actions + Preview**", expanded=True):
+        if st.button("Auto Clean (Recommended)", use_container_width=True):
+            st.session_state["remove_duplicates"] = True
+            st.session_state["impute_missing"] = True
+            st.session_state["cap_outliers"] = False
+            st.session_state["drop_constant"] = True
+            st.success("Auto Clean options applied.")
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            remove_duplicates = st.checkbox("Remove duplicate rows", value=True, key="remove_duplicates")
+            impute_missing = st.checkbox("Impute missing values (median/mode)", value=True, key="impute_missing")
+        with col_b:
+            cap_outliers = st.checkbox("Cap numeric outliers (IQR)", value=False, key="cap_outliers")
+            drop_constant = st.checkbox("Drop constant columns", value=True, key="drop_constant")
+
+        with st.spinner("Applying cleaning actions..."):
+            cleaned_df = apply_cleaning_actions(
+                df,
+                remove_duplicates=remove_duplicates,
+                impute_missing=impute_missing,
+                cap_outliers=cap_outliers,
+                drop_constant=drop_constant,
+            )
+
+        before_col, after_col = st.columns(2)
+        with before_col:
+            st.markdown("**Before**")
+            st.metric("Rows", f"{len(df):,}")
+            st.metric("Columns", f"{df.shape[1]:,}")
+        with after_col:
+            st.markdown("**After**")
+            st.metric("Rows", f"{len(cleaned_df):,}")
+            st.metric("Columns", f"{cleaned_df.shape[1]:,}")
+
+        st.caption("Cleaned data preview")
+        st.dataframe(cleaned_df.head(15), use_container_width=True)
+
+    analysis_df = cleaned_df
+
     # ============== DATA QUALITY SCORE ==============
-    with st.expander("**2. Data Quality Score**", expanded=True):
-        score, color = compute_quality_score(df)
+    with st.expander("**4. Data Quality Score**", expanded=True):
+        score, color = compute_quality_score(analysis_df)
         st.markdown(f"""
         <div class="score-card">
             <div class="score-value" style="color: {color};">{score}</div>
@@ -412,9 +639,9 @@ def main():
         st.caption("Based on: missing values, duplicate rows, and data type consistency.")
 
     # ============== MISSING VALUES ==============
-    with st.expander("**3. Missing Values Analysis**", expanded=True):
-        missing_counts = df.isna().sum()
-        missing_pct = (missing_counts / len(df) * 100).round(1)
+    with st.expander("**5. Missing Values Analysis**", expanded=True):
+        missing_counts = analysis_df.isna().sum()
+        missing_pct = (missing_counts / len(analysis_df) * 100).round(1)
         missing_df = pd.DataFrame({
             "Column": missing_counts.index,
             "Missing count": missing_counts.values,
@@ -434,19 +661,16 @@ def main():
             st.pyplot(fig)
             plt.close()
 
-    num_cols = get_numerical_columns(df)
+    num_cols = get_numerical_columns(analysis_df)
     outlier_counts = {}
     strong_pairs = []
 
     # ============== OUTLIER DETECTION ==============
-    with st.expander("**4. Outlier Detection (IQR)**", expanded=True):
+    with st.expander("**6. Outlier Detection (IQR)**", expanded=True):
         if not num_cols:
             st.info("No numerical columns found. Outlier detection applies only to numeric features.")
         else:
-            outlier_counts = {}
-            for col in num_cols:
-                mask = detect_outliers_iqr(df[col].dropna())
-                outlier_counts[col] = int(mask.sum())
+            outlier_counts = compute_outlier_counts_cached(analysis_df)
             outlier_series = pd.Series(outlier_counts)
             outlier_series = outlier_series[outlier_series > 0].sort_values(ascending=False)
 
@@ -467,12 +691,15 @@ def main():
                 plt.close()
 
     # ============== FEATURE CORRELATION ==============
-    with st.expander("**5. Feature Correlation**", expanded=True):
-        num_cols = get_numerical_columns(df)
+    with st.expander("**7. Feature Correlation**", expanded=True):
+        num_cols = get_numerical_columns(analysis_df)
         if len(num_cols) < 2:
             st.info("Need at least 2 numerical columns for a correlation heatmap.")
         else:
-            corr = df[num_cols].corr()
+            corr = analysis_df[num_cols].corr()
+            if len(corr.columns) > 15:
+                st.caption("Showing first 15 numerical columns for readability.")
+                corr = corr.iloc[:15, :15]
             fig, ax = plt.subplots(figsize=(10, 8))
             sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm", center=0,
                         ax=ax, linewidths=0.5, cbar_kws={"label": "Correlation"},
@@ -495,16 +722,16 @@ def main():
                 st.caption("High correlation means one feature may be redundant with the other; consider dropping one if you want simpler models.")
 
     # ============== FEATURE IMPORTANCE ==============
-    with st.expander("**6. Feature Importance (Random Forest)**", expanded=True):
+    with st.expander("**8. Feature Importance (Random Forest)**", expanded=True):
         target_col = st.selectbox(
             "Select target column (what you want to predict)",
-            options=df.columns.tolist(),
+            options=analysis_df.columns.tolist(),
             index=0,
             key="target_col",
         )
         if target_col:
             with st.spinner("Computing feature importance..."):
-                imp = feature_importance_rf(df, target_col)
+                imp, perf_value, perf_metric = feature_importance_rf(analysis_df, target_col)
             if imp is None or len(imp) == 0:
                 st.warning("Could not compute feature importance (e.g. not enough numerical features or valid target).")
             else:
@@ -517,13 +744,14 @@ def main():
                 plt.close()
                 top3 = list(imp.tail(3).index)
                 st.caption(f"**In plain English:** The most important features for predicting **{target_col}** are: **{', '.join(top3)}**. Focus on these when interpreting your model.")
+                if perf_value is not None and perf_metric is not None:
+                    st.metric(f"Holdout {perf_metric}", f"{perf_value:.3f}")
 
     # ============== RECOMMENDATIONS ==============
-    with st.expander("**7. Plain English Recommendations**", expanded=True):
-        missing_pct_series = (df.isna().sum() / len(df) * 100)
-        outlier_counts_dict = outlier_counts if num_cols else {}
+    with st.expander("**9. Plain English Recommendations**", expanded=True):
+        missing_pct_series = (analysis_df.isna().sum() / len(analysis_df) * 100)
         recs = generate_recommendations(
-            df, score,
+            analysis_df, score,
             missing_pct_series,
             outlier_counts,
             len(strong_pairs) > 0,
@@ -532,11 +760,22 @@ def main():
             st.markdown(f"- {r}")
         st.markdown('<div class="recommendations-box">**Tip:** Fix data quality issues before training models. Clean data leads to reliable results.</div>', unsafe_allow_html=True)
 
-    st.download_button(
-        "Download cleaned data",
-        df.to_csv(index=False),
-        "cleaned_data.csv"
-    )
+    with st.expander("**10. Export Cleaned Data + Report**", expanded=True):
+        st.download_button(
+            "Download cleaned CSV",
+            analysis_df.to_csv(index=False).encode("utf-8"),
+            "dataready_cleaned.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+        report_text = build_report_text(df, analysis_df, score, recs, strong_pairs)
+        st.download_button(
+            "Download analysis report (.txt)",
+            report_text.encode("utf-8"),
+            "dataready_report.txt",
+            mime="text/plain",
+            use_container_width=True,
+        )
 
     st.markdown("---")
     st.caption("DataReady by ASX Labs — Clean Data. Better Models.")
