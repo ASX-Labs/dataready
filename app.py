@@ -323,10 +323,26 @@ def feature_importance_rf(
         n_classes = len(le.classes_)
         if n_classes < 2:
             return None, None, None
-        # Stratify for classification when possible.
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=y
+        # Stratify only when class counts and split size support it.
+        if len(y) < 10:
+            return None, None, None
+        class_counts = np.bincount(y)
+        n_test = int(np.ceil(len(y) * 0.2))
+        can_stratify = (
+            len(class_counts) >= 2
+            and class_counts.min() >= 2
+            and n_test >= n_classes
         )
+        try:
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42,
+                stratify=y if can_stratify else None
+            )
+        except ValueError:
+            # Final safe fallback for edge-case class distributions.
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42
+            )
         model = RandomForestClassifier(n_estimators=100, random_state=42, max_depth=10)
         metric_name = "Accuracy"
     else:
