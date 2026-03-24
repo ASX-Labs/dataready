@@ -532,9 +532,17 @@ def main():
             st.markdown(f"- {r}")
         st.markdown('<div class="recommendations-box">**Tip:** Fix data quality issues before training models. Clean data leads to reliable results.</div>', unsafe_allow_html=True)
 
+    st.download_button(
+        "Download cleaned data",
+        df.to_csv(index=False),
+        "cleaned_data.csv"
+    )
+
     st.markdown("---")
     st.caption("DataReady by ASX Labs — Clean Data. Better Models.")
 
 
+
 if __name__ == "__main__":
     main()
+
