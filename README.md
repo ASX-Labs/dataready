@@ -1,40 +1,154 @@
-# DataReady
+# DataReady – Updated Features & Overview
 
-## 🚀 Live Demo
-👉 https://dataready-jntbkbxpzsudwabniq4imq.streamlit.app
+🚀 **Live Demo**
+https://dataready-jntbkbxpzsudwabniq4imq.streamlit.app
 
-Professional data analysis web app by **ASX Labs** — *Clean Data. Better Models.*
+**Professional data analysis web app by ASX Labs — Clean Data. Better Models.**
 
-## Quick start
+---
+
+## 🧠 Overview
+
+DataReady is an interactive data analysis and preprocessing tool designed to help users quickly understand, clean, and prepare datasets for machine learning. It combines automated data profiling, visualization, and basic modeling into a clean, user-friendly interface.
+
+---
+
+## ⚡ Quick Start
 
 ```bash
 cd DataReady
 pip install -r requirements.txt
 streamlit run app.py
-````
+```
 
-Open the URL shown in the terminal ([https://dataready-jntbkbxpzsudwabniq4imq.streamlit.app/](https://dataready-jntbkbxpzsudwabniq4imq.streamlit.app/)).
+Then open the URL shown in your terminal.
 
-## Features
+---
 
-* **CSV upload** — Drag and drop; see row count, column count, file size
-* **Data quality score** — 0–100 based on missing values, duplicates, type consistency
-* **Missing values** — Per-column counts, percentages, bar chart
-* **Outlier detection** — IQR-based; counts and chart by column
-* **Feature correlation** — Heatmap and strongly correlated pairs with short explanations
-* **Feature importance** — Random Forest importance; choose target column, see ranked chart
-* **Recommendations** — Plain English suggestions for cleaning and modeling
+## 🚀 Core Features
 
-## New Features Added
+### 📂 CSV Upload
 
-* **Data Type Profiler** — Shows column name, pandas dtype, inferred type, missing %, unique values, and flags possible issues
-* **Cleaning Actions + Preview** — Toggle actions like removing duplicates, imputing missing values, capping outliers, dropping constant columns; preview before vs after counts
-* **Export Cleaned Data + Report** — Download cleaned CSV and text report with dataset size, quality score, correlations, and recommendations
+* Drag & drop CSV upload
+* Automatic delimiter detection
+* Displays:
 
-## Important Behavior Change
+  * Row count
+  * Column count
+  * File size
 
-After these additions, **all analytics now run on the cleaned dataset** (based on your selected cleaning toggles), not just raw upload data.
-Sections affected:
+---
+
+### 📊 Data Quality Score
+
+* Score from **0–100**
+* Based on:
+
+  * Missing values
+  * Duplicate rows
+  * Data type consistency
+
+---
+
+### 🧩 Data Type Profiler
+
+* Column-level insights:
+
+  * Pandas dtype
+  * Inferred type (numeric, categorical, datetime)
+  * Missing %
+  * Unique values
+  * Flags:
+
+    * Possible ID columns
+    * High missingness
+    * Constant columns
+
+---
+
+### 🧹 Data Cleaning (Interactive)
+
+* Toggle-based cleaning:
+
+  * Remove duplicates
+  * Impute missing values (median/mode)
+  * Cap outliers (IQR method)
+  * Drop constant columns
+
+#### ✨ Auto Clean (New)
+
+* One-click recommended cleaning setup
+
+#### 👀 Preview
+
+* Before vs After comparison
+* Cleaned dataset preview table
+
+---
+
+### ⚠️ Missing Values Analysis
+
+* Per-column:
+
+  * Missing count
+  * Missing %
+* Horizontal bar chart visualization
+
+---
+
+### 📈 Outlier Detection (IQR)
+
+* Uses **1.5 × IQR rule**
+* Displays:
+
+  * Outlier counts per column
+  * Visualization chart
+
+---
+
+### 🔗 Feature Correlation
+
+* Correlation heatmap (numeric features)
+* Automatically detects **strong correlations (|r| ≥ 0.6)**
+* Plain-English explanations:
+
+  * Positive vs negative relationships
+
+---
+
+### 🤖 Feature Importance (Enhanced)
+
+* Uses **Random Forest models**
+* Supports:
+
+  * Classification (Accuracy)
+  * Regression (R² Score)
+
+#### Includes:
+
+* Train/test split (holdout validation)
+* Performance metric display
+* Ranked feature importance chart
+
+---
+
+### 💡 Recommendations Engine
+
+* Generates **plain English suggestions**
+* Covers:
+
+  * Missing data handling
+  * Duplicate removal
+  * Outlier treatment
+  * Feature correlation issues
+
+---
+
+## 🔄 Important Behavior
+
+All analytics run on the **cleaned dataset**, not the raw upload.
+
+This affects:
 
 * Data Quality Score
 * Missing Values
@@ -43,12 +157,57 @@ Sections affected:
 * Feature Importance
 * Recommendations
 
-## Tech stack
+---
 
-Python, Streamlit, pandas, NumPy, scikit-learn, matplotlib, seaborn, SciPy.
+## 📤 Export Options
 
-## Branding
+### 📁 Cleaned Dataset
 
-* Dark theme `#0F172A`
-* Cyan accent `#13D8D8`
-* ASX Labs logo and tagline in header
+* Download as CSV
+
+### 📝 Analysis Report
+
+* Includes:
+
+  * Dataset overview
+  * Quality score
+  * Duplicate count
+  * Top missing issues
+  * Correlation insights
+  * Recommendations
+
+---
+
+## 🛠 Tech Stack
+
+* Python
+* Streamlit
+* pandas
+* NumPy
+* scikit-learn
+* matplotlib
+* seaborn
+
+---
+
+## 🎨 Branding
+
+* Dark theme: `#000000`
+* Accent color: `#2ECC71`
+* Clean UI with ASX Labs branding
+
+---
+
+## 🧪 Positioning
+
+DataReady combines:
+
+* Data profiling
+* Automated cleaning
+* Basic machine learning insights
+
+All in one lightweight web application.
+
+---
+
+**DataReady by ASX Labs — Clean Data. Better Models.**
